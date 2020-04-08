@@ -11,9 +11,9 @@ import (
 // InstallPackage takes a metadata object describing a package available for
 // installation, retrieves that package, and installs it into the receiving
 // cache directory.
-func (d *Dir) InstallPackage(ctx context.Context, meta getproviders.PackageMeta) error {
+func (d *Dir) InstallPackage(ctx context.Context, meta getproviders.PackageMeta) (*getproviders.PackageAuthenticationResult, error) {
 	if meta.TargetPlatform != d.targetPlatform {
-		return fmt.Errorf("can't install %s package into cache directory expecting %s", meta.TargetPlatform, d.targetPlatform)
+		return nil, fmt.Errorf("can't install %s package into cache directory expecting %s", meta.TargetPlatform, d.targetPlatform)
 	}
 	newPath := getproviders.UnpackedDirectoryPathForPackage(
 		d.baseDir, meta.Provider, meta.Version, d.targetPlatform,
@@ -29,17 +29,17 @@ func (d *Dir) InstallPackage(ctx context.Context, meta getproviders.PackageMeta)
 	// error if the authentication fails.
 
 	log.Printf("[TRACE] providercache.Dir.InstallPackage: installing %s v%s from %s", meta.Provider, meta.Version, meta.Location)
-	switch location := meta.Location.(type) {
+	switch meta.Location.(type) {
 	case getproviders.PackageHTTPURL:
-		return installFromHTTPURL(ctx, string(location), newPath)
+		return installFromHTTPURL(ctx, meta, newPath)
 	case getproviders.PackageLocalArchive:
-		return installFromLocalArchive(ctx, string(location), newPath)
+		return installFromLocalArchive(ctx, meta, newPath)
 	case getproviders.PackageLocalDir:
-		return installFromLocalDir(ctx, string(location), newPath)
+		return installFromLocalDir(ctx, meta, newPath)
 	default:
 		// Should not get here, because the above should be exhaustive for
 		// all implementations of getproviders.Location.
-		return fmt.Errorf("don't know how to install from a %T location", location)
+		return nil, fmt.Errorf("don't know how to install from a %T location", meta.Location)
 	}
 }
 
@@ -67,5 +67,9 @@ func (d *Dir) LinkFromOtherCache(entry *CachedProvider) error {
 	// We re-use the process of installing from a local directory here, because
 	// the two operations are fundamentally the same: symlink if possible,
 	// deep-copy otherwise.
-	return installFromLocalDir(context.TODO(), currentPath, newPath)
+	meta := getproviders.PackageMeta{
+		Location: getproviders.PackageLocalDir(currentPath),
+	}
+	_, err := installFromLocalDir(context.TODO(), meta, newPath)
+	return err
 }
