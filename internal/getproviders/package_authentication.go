@@ -23,7 +23,12 @@ const (
 	communityProvider
 )
 
-// FIXME docs
+// PackageAuthenticationResult is returned from a PackageAuthentication
+// implementation. It is a mostly-opaque type intended for use in UI, which
+// implements Stringer and includes an optional Warning field.
+//
+// A failed PackageAuthentication attempt will return an "unauthenticated"
+// result, which is represented by nil.
 type PackageAuthenticationResult struct {
 	result  packageAuthenticationResult
 	Warning string
@@ -31,7 +36,7 @@ type PackageAuthenticationResult struct {
 
 func (t *PackageAuthenticationResult) String() string {
 	if t == nil {
-		return "Unauthenticated"
+		return "unauthenticated"
 	}
 	return []string{
 		"verified checksum",
@@ -41,7 +46,11 @@ func (t *PackageAuthenticationResult) String() string {
 	}[t.result]
 }
 
-// FIXME docs
+// SigningKey represents a key used to sign packages from a registry, along
+// with an optional trust signature from the registry operator. These are
+// both in ASCII armored OpenPGP format.
+//
+// The JSON struct tags represent the field names used by the Registry API.
 type SigningKey struct {
 	ASCIIArmor     string `json:"ascii_armor"`
 	TrustSignature string `json:"trust_signature"`
@@ -56,10 +65,10 @@ type SigningKey struct {
 // has not been tampered with.
 type PackageAuthentication interface {
 	// AuthenticatePackage takes the metadata about the package as returned
-	// by its original source, and also the "localLocation" where it has
-	// been staged for local inspection (which may or may not be the same
-	// as the original source location) and returns an error if the
-	// authentication checks fail.
+	// by its original source, and also the "localLocation" where it has been
+	// staged for local inspection (which may or may not be the same as the
+	// original source location), and returns a PackageAuthenticationResult, or
+	// an error if the authentication checks fail.
 	//
 	// The localLocation is guaranteed not to be a PackageHTTPURL: a
 	// remote package will always be staged locally for inspection first.
@@ -73,6 +82,9 @@ type packageAuthenticationAll []PackageAuthentication
 //
 // The checks are processed in the order given, so a failure of an earlier
 // check will prevent execution of a later one.
+//
+// The returned result is from the last authentication, so callers should
+// take care to order the authentications such that the strongest is last.
 func PackageAuthenticationAll(checks ...PackageAuthentication) PackageAuthentication {
 	return packageAuthenticationAll(checks)
 }
@@ -139,7 +151,16 @@ type matchingChecksumAuthentication struct {
 	WantSHA256Sum [sha256.Size]byte
 }
 
-// NewMatchingChecksumAuthentication FIXME
+// NewMatchingChecksumAuthentication returns a PackageAuthentication
+// implementation that scans a registry-provided SHA256SUMS document for a
+// specified filename, and compares the SHA256 hash against the expected hash.
+// This is necessary to ensure that the signed SHA256SUMS document matches the
+// declared SHA256 hash for the package, and therefore that a valid signature
+// of this document authenticates the package.
+//
+// This authentication always returns a nil result, since it alone cannot offer
+// any assertions about package integrity. It should be combined with other
+// authentications to be useful.
 func NewMatchingChecksumAuthentication(document []byte, filename string, wantSHA256Sum [sha256.Size]byte) PackageAuthentication {
 	return matchingChecksumAuthentication{
 		Document:      document,
@@ -176,7 +197,7 @@ func (m matchingChecksumAuthentication) AuthenticatePackage(meta PackageMeta, lo
 		return nil, fmt.Errorf("checksum list has invalid SHA256 hash %q: %s", string(checksum), err)
 	}
 
-	// If thee checksums don't match, authentication fails.
+	// If the checksums don't match, authentication fails.
 	if !bytes.Equal(gotSHA256Sum[:], m.WantSHA256Sum[:]) {
 		return nil, fmt.Errorf("checksum list has unexpected SHA-256 hash %x (expected %x)", gotSHA256Sum, m.WantSHA256Sum[:])
 	}
@@ -193,7 +214,21 @@ type signatureAuthentication struct {
 }
 
 // NewSignatureAuthentication returns a PackageAuthentication implementation
-// that verifies the cryptographic signature for a package against a given key.
+// that verifies the cryptographic signature for a package against any of the
+// provided keys.
+//
+// The signing key for a package will be auto detected by attempting each key
+// in turn until one is successful. If such a key is found, there are three
+// possible successful authentication results:
+//
+// 1. If the signing key is the HashiCorp official key, it is a HashiCorp
+//    provider;
+// 2. Otherwise, if the signing key has a trust signature from the HashiCorp
+//    Partners key, it is a Partner provider;
+// 3. If neither of the above is true, it is a Community provider.
+//
+// Any failure in the process of validating the signature will result in an
+// unauthenticated result.
 func NewSignatureAuthentication(document, signature []byte, keys []SigningKey) PackageAuthentication {
 	return signatureAuthentication{
 		Document:  document,
