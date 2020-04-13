@@ -14,9 +14,18 @@ import (
 	openpgpErrors "golang.org/x/crypto/openpgp/errors"
 )
 
+type packageAuthenticationResult int
+
+const (
+	verifiedChecksum packageAuthenticationResult = iota
+	hashicorpProvider
+	partnerProvider
+	communityProvider
+)
+
 // FIXME docs
 type PackageAuthenticationResult struct {
-	Result  string
+	result  packageAuthenticationResult
 	Warning string
 }
 
@@ -24,7 +33,12 @@ func (t *PackageAuthenticationResult) String() string {
 	if t == nil {
 		return "Unauthenticated"
 	}
-	return t.Result
+	return []string{
+		"verified checksum",
+		"HashiCorp provider",
+		"Partner provider",
+		"community provider",
+	}[t.result]
 }
 
 // FIXME docs
@@ -116,7 +130,7 @@ func (a archiveHashAuthentication) AuthenticatePackage(meta PackageMeta, localLo
 	if !bytes.Equal(gotHash, a.WantSHA256Sum[:]) {
 		return nil, fmt.Errorf("archive has incorrect SHA-256 checksum %x (expected %x)", gotHash, a.WantSHA256Sum[:])
 	}
-	return &PackageAuthenticationResult{Result: "verified checksum"}, nil
+	return &PackageAuthenticationResult{result: verifiedChecksum}, nil
 }
 
 type matchingChecksumAuthentication struct {
@@ -243,7 +257,7 @@ func (s signatureAuthentication) AuthenticatePackage(meta PackageMeta, location 
 	}
 	_, err = openpgp.CheckDetachedSignature(hashicorpKeyring, bytes.NewReader(s.Document), bytes.NewReader(s.Signature))
 	if err == nil {
-		return &PackageAuthenticationResult{Result: "HashiCorp provider"}, nil
+		return &PackageAuthenticationResult{result: hashicorpProvider}, nil
 	}
 
 	// If the signing key has a trust signature, attempt to verify it with the
@@ -269,13 +283,13 @@ func (s signatureAuthentication) AuthenticatePackage(meta PackageMeta, location 
 			return nil, fmt.Errorf("Error verifying trust signature: %s", err)
 		}
 
-		return &PackageAuthenticationResult{Result: "Partner provider"}, nil
+		return &PackageAuthenticationResult{result: partnerProvider}, nil
 	}
 
 	// We have a valid signature, but it's not from the HashiCorp key, and it
 	// also isn't a trusted partner. This is a community provider.
 	return &PackageAuthenticationResult{
-		Result:  "community provider",
+		result:  communityProvider,
 		Warning: communityProviderWarning,
 	}, nil
 }

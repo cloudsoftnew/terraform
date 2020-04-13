@@ -93,10 +93,10 @@ func installFromHTTPURL(ctx context.Context, meta getproviders.PackageMeta, targ
 }
 
 func installFromLocalArchive(ctx context.Context, meta getproviders.PackageMeta, targetDir string) (*getproviders.PackageAuthenticationResult, error) {
-	var authType *getproviders.PackageAuthenticationResult
+	var authResult *getproviders.PackageAuthenticationResult
 	if meta.Authentication != nil {
 		var err error
-		if authType, err = meta.Authentication.AuthenticatePackage(meta, meta.Location); err != nil {
+		if authResult, err = meta.Authentication.AuthenticatePackage(meta, meta.Location); err != nil {
 			return nil, err
 		}
 	}
@@ -104,10 +104,10 @@ func installFromLocalArchive(ctx context.Context, meta getproviders.PackageMeta,
 
 	err := unzip.Decompress(targetDir, filename, true)
 	if err != nil {
-		return authType, err
+		return authResult, err
 	}
 
-	return authType, nil
+	return authResult, nil
 }
 
 // installFromLocalDir is the implementation of both installing a package from
