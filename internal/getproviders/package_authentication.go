@@ -239,7 +239,7 @@ func (s signatureAuthentication) AuthenticatePackage(meta PackageMeta, location 
 	// this is an official provider.
 	hashicorpKeyring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(HashicorpPublicKey))
 	if err != nil {
-		return nil, fmt.Errorf("Error creating HashiCorp Partners keyring: %s", err)
+		return nil, fmt.Errorf("Error creating HashiCorp keyring: %s", err)
 	}
 	_, err = openpgp.CheckDetachedSignature(hashicorpKeyring, bytes.NewReader(s.Document), bytes.NewReader(s.Signature))
 	if err == nil {
