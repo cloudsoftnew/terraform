@@ -63,6 +63,17 @@ func (d *Dir) LinkFromOtherCache(entry *CachedProvider) error {
 	// the two operations are fundamentally the same: symlink if possible,
 	// deep-copy otherwise.
 	meta := getproviders.PackageMeta{
+		Provider: entry.Provider,
+		Version:  entry.Version,
+
+		// FIXME: How do we populate this?
+		ProtocolVersions: nil,
+		TargetPlatform:   d.targetPlatform,
+
+		// Because this is already unpacked, the filename is synthetic
+		// based on the standard naming scheme.
+		Filename: fmt.Sprintf("terraform-provider-%s_%s_%s.zip",
+			entry.Provider.Type, entry.Version, d.targetPlatform),
 		Location: getproviders.PackageLocalDir(currentPath),
 	}
 	_, err := installFromLocalDir(context.TODO(), meta, newPath)
