@@ -215,11 +215,65 @@ func (s signatureAuthentication) AuthenticatePackage(meta PackageMeta, location 
 		return nil, fmt.Errorf("cannot check archive hash for non-HTTP location %s", meta.Location)
 	}
 
-	// Attempt to verify the signature using each of the keys returned by the
-	// registry. Note: currently the registry only returns one key, but this
-	// may change in the future. We must check each key in turn to find the
-	// matching signing entity before proceeding.
-	var signingKey *SigningKey
+	// Find the key that signed the checksum file. This can fail if there is no
+	// valid signature for any of the provided keys.
+	signingKey, err := s.findSigningKey()
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify the signature using the HashiCorp public key. If this succeeds,
+	// this is an official provider.
+	hashicorpKeyring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(HashicorpPublicKey))
+	if err != nil {
+		return nil, fmt.Errorf("error creating HashiCorp keyring: %s", err)
+	}
+	_, err = openpgp.CheckDetachedSignature(hashicorpKeyring, bytes.NewReader(s.Document), bytes.NewReader(s.Signature))
+	if err == nil {
+		return &PackageAuthenticationResult{result: hashicorpProvider}, nil
+	}
+
+	// If the signing key has a trust signature, attempt to verify it with the
+	// HashiCorp partners public key.
+	if signingKey.TrustSignature != "" {
+		hashicorpPartnersKeyring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(HashicorpPartnersKey))
+		if err != nil {
+			return nil, fmt.Errorf("error creating HashiCorp Partners keyring: %s", err)
+		}
+
+		authorKey, err := openpgpArmor.Decode(strings.NewReader(signingKey.ASCIIArmor))
+		if err != nil {
+			return nil, err
+		}
+
+		trustSignature, err := openpgpArmor.Decode(strings.NewReader(signingKey.TrustSignature))
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = openpgp.CheckDetachedSignature(hashicorpPartnersKeyring, authorKey.Body, trustSignature.Body)
+		if err != nil {
+			return nil, fmt.Errorf("error verifying trust signature: %s", err)
+		}
+
+		return &PackageAuthenticationResult{result: partnerProvider}, nil
+	}
+
+	// We have a valid signature, but it's not from the HashiCorp key, and it
+	// also isn't a trusted partner. This is a community provider.
+	return &PackageAuthenticationResult{
+		result:  communityProvider,
+		Warning: communityProviderWarning,
+	}, nil
+}
+
+// findSigningKey attempts to verify the signature using each of the keys
+// returned by the registry. If a valid signature is found, it returns the
+// signing key.
+//
+// Note: currently the registry only returns one key, but this may change in
+// the future.
+func (s signatureAuthentication) findSigningKey() (*SigningKey, error) {
 	for _, key := range s.Keys {
 		keyring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(key.ASCIIArmor))
 		if err != nil {
@@ -239,59 +293,12 @@ func (s signatureAuthentication) AuthenticatePackage(meta PackageMeta, location 
 			return nil, err
 		}
 
-		signingKey = &key
-		break
+		return &key, nil
 	}
 
 	// If none of the provided keys issued the signature, this package is
 	// unsigned. This is currently a terminal authentication error.
-	if signingKey == nil {
-		return nil, fmt.Errorf("Authentication signature from unknown issuer")
-	}
-
-	// Verify the signature using the HashiCorp public key. If this succeeds,
-	// this is an official provider.
-	hashicorpKeyring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(HashicorpPublicKey))
-	if err != nil {
-		return nil, fmt.Errorf("Error creating HashiCorp keyring: %s", err)
-	}
-	_, err = openpgp.CheckDetachedSignature(hashicorpKeyring, bytes.NewReader(s.Document), bytes.NewReader(s.Signature))
-	if err == nil {
-		return &PackageAuthenticationResult{result: hashicorpProvider}, nil
-	}
-
-	// If the signing key has a trust signature, attempt to verify it with the
-	// HashiCorp partners public key.
-	if signingKey.TrustSignature != "" {
-		hashicorpPartnersKeyring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(HashicorpPartnersKey))
-		if err != nil {
-			return nil, fmt.Errorf("Error creating HashiCorp Partners keyring: %s", err)
-		}
-
-		authorKey, err := openpgpArmor.Decode(strings.NewReader(signingKey.ASCIIArmor))
-		if err != nil {
-			return nil, err
-		}
-
-		trustSignature, err := openpgpArmor.Decode(strings.NewReader(signingKey.TrustSignature))
-		if err != nil {
-			return nil, err
-		}
-
-		_, err = openpgp.CheckDetachedSignature(hashicorpPartnersKeyring, authorKey.Body, trustSignature.Body)
-		if err != nil {
-			return nil, fmt.Errorf("Error verifying trust signature: %s", err)
-		}
-
-		return &PackageAuthenticationResult{result: partnerProvider}, nil
-	}
-
-	// We have a valid signature, but it's not from the HashiCorp key, and it
-	// also isn't a trusted partner. This is a community provider.
-	return &PackageAuthenticationResult{
-		result:  communityProvider,
-		Warning: communityProviderWarning,
-	}, nil
+	return nil, fmt.Errorf("authentication signature from unknown issuer")
 }
 
 const communityProviderWarning = `community providers are not trusted by HashiCorp. Use at your own risk.`
