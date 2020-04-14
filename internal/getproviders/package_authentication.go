@@ -170,12 +170,6 @@ func NewMatchingChecksumAuthentication(document []byte, filename string, wantSHA
 }
 
 func (m matchingChecksumAuthentication) AuthenticatePackage(meta PackageMeta, location PackageLocation) (*PackageAuthenticationResult, error) {
-	if _, ok := meta.Location.(PackageHTTPURL); !ok {
-		// A source should not use this authentication type for non-HTTP
-		// source locations.
-		return nil, fmt.Errorf("cannot verify matching checksum for non-HTTP location %s", meta.Location)
-	}
-
 	// Find the checksum in the list with matching filename. The document is
 	// in the form "0123456789abcdef filename.zip".
 	filename := []byte(m.Filename)
@@ -242,12 +236,6 @@ func (s signatureAuthentication) AuthenticatePackage(meta PackageMeta, location 
 		// A source should not use this authentication type for non-archive
 		// locations.
 		return nil, fmt.Errorf("cannot check archive hash for non-archive location %s", location)
-	}
-
-	if _, ok := meta.Location.(PackageHTTPURL); !ok {
-		// A source should not use this authentication type for non-HTTP source
-		// locations.
-		return nil, fmt.Errorf("cannot check archive hash for non-HTTP location %s", meta.Location)
 	}
 
 	// Find the key that signed the checksum file. This can fail if there is no
