@@ -272,7 +272,8 @@ func TestMatchingChecksumAuthentication_failure(t *testing.T) {
 
 // Signature authentication takes a checksum document, a signature, and a list
 // of signing keys. If the document is signed by one of the given keys, the
-// authentication is successful. The result depends on the signing key.
+// authentication is successful. The value of the result depends on the signing
+// key and its trust signature.
 func TestSignatureAuthentication_success(t *testing.T) {
 	tests := map[string]struct {
 		signature string
@@ -355,6 +356,91 @@ func TestSignatureAuthentication_success(t *testing.T) {
 	}
 }
 
+// Signature authentication can fail for many reasons, most of which are due
+// to OpenPGP failures from malformed keys or signatures.
+func TestSignatureAuthentication_failure(t *testing.T) {
+	tests := map[string]struct {
+		signature string
+		keys      []SigningKey
+		err       string
+	}{
+		"invalid key": {
+			testHashicorpSignatureGoodBase64,
+			[]SigningKey{
+				{
+					ASCIIArmor: "invalid PGP armor value",
+				},
+			},
+			"error decoding signing key: openpgp: invalid argument: no armored data found",
+		},
+		"invalid signature": {
+			testSignatureBadBase64,
+			[]SigningKey{
+				{
+					ASCIIArmor: testAuthorKeyArmor,
+				},
+			},
+			"error checking signature: openpgp: invalid data: signature subpacket truncated",
+		},
+		"no keys match signature": {
+			testAuthorSignatureGoodBase64,
+			[]SigningKey{
+				{
+					ASCIIArmor: HashicorpPublicKey,
+				},
+			},
+			"authentication signature from unknown issuer",
+		},
+		"invalid trust signature": {
+			testAuthorSignatureGoodBase64,
+			[]SigningKey{
+				{
+					ASCIIArmor:     testAuthorKeyArmor,
+					TrustSignature: "invalid PGP armor value",
+				},
+			},
+			"error decoding trust signature: EOF",
+		},
+		"unverified trust signature": {
+			testAuthorSignatureGoodBase64,
+			[]SigningKey{
+				{
+					ASCIIArmor:     testAuthorKeyArmor,
+					TrustSignature: testOtherKeyTrustSignatureArmor,
+				},
+			},
+			"error verifying trust signature: openpgp: invalid signature: hash tag doesn't match",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			// PackageMeta is unused by this authentication mechanism
+			// FIXME: and really by all the others, so let's remove it from the call
+			// signature in a later commit
+			meta := PackageMeta{}
+
+			// Location is unused
+			location := PackageLocalArchive("testdata/my-package.zip")
+
+			signature, err := base64.StdEncoding.DecodeString(test.signature)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			auth := NewSignatureAuthentication([]byte(testShaSums), signature, test.keys)
+			result, err := auth.AuthenticatePackage(meta, location)
+
+			if result != nil {
+				t.Errorf("wrong result: got %#v, want nil", result)
+			}
+			if gotErr := err.Error(); gotErr != test.err {
+				t.Errorf("wrong err: got %s, want %s", gotErr, test.err)
+			}
+		})
+	}
+}
+
 // testAuthorKeyArmor is test key ID 5BFEEC4317E746008621970637A6AB3BCF2C170A.
 const testAuthorKeyArmor = `-----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -407,6 +493,25 @@ QXPfvB2cVF/SxMqqHWpnT+8c8klfS03kXSb0BdknrQ4DNPq1H5A=
 =3A1s
 -----END PGP SIGNATURE-----`
 
+// testOtherKeyTrustSignatureArmor is a trust signature of another key (not the
+// author key), signed with HashicorpPartnersKey.
+const testOtherKeyTrustSignatureArmor = `-----BEGIN PGP SIGNATURE-----
+
+iQIzBAABCAAdFiEEUYkGV8Ws20uCMIZWfXLUJo5GYPwFAl6POvsACgkQfXLUJo5G
+YPyGihAAomM1kGmrC5KRgWQ+V47r8wFoIkhsTgAYb9ENOzn/RVJt3SJSstcKxfA3
+7HW5R4kqAoXH1hcPYpUcOcdeAvtZxjGRQ9JgErV8NBg6sR11aQccCzAG4Hy0hWav
+/jB5NzTEX5JFEXH6WhpWI1avh0l2j6JxO1K1s+5+5PI3KbuO+XSqeZ3QmUz9FwGu
+pr0J6oYcERupzrpnmgMb5fbkpHfzffR2/MOYdF9Hae4EvDS1b7tokuuKsStNnCm0
+ge7PFdekwbj/OiQrQlqM1pOw2siPX3ouWCtW8oExm9tAxNw31Bn2g3oaNMkHMqJd
+hlVUZlqeJMyylUat3cY7GTQONfCnoyUHe/wv8exBUbV3v2glp9y2g9i2XmXkHOrV
+Z+pnNBc+jdp3a4O0Y8fXXZdjiIolZKY8BbvzheuMrQQIOmw4N3KrZbTpLKuqz8rb
+h8bqUbU42oWcJmBvzF4NZ4tQ+aFHs4CbOnjfDfS14baQr2Gqo9BqTfrzS5Pbs8lq
+AhY0r+zi71lQ1rBfgZfjd8zWlOzpDO//nwKhGCqYOWke/C/T6o0zxM0R4uR4zXwT
+KhvXK8/kK/L8Flaxqme0d5bzXLbsMe9I6I76DY5iNhkiFnnWt4+FhGoIDR03MTKS
+SnHodBLlpKLyUXi36DCDy/iKVsieqLsAdcYe0nQFuhoQcOme33A=
+=aHOG
+-----END PGP SIGNATURE-----`
+
 // testShaSums is a string that represents the SHA256SUMS file downloaded
 // for a release.
 const testShaSums = "example shasums data"
@@ -418,6 +523,12 @@ const testAuthorSignatureGoodBase64 = `iQEzBAABCAAdFiEEW/7sQxfnRgCGIZcGN6arO88s`
 	`FwoFAl5vh7gACgkQN6arO88sFwrAlQf6Al77qzjxNIj+NQNJfBGYUE5jHIgcuWOs1IPRTYUI` +
 	`rHQIUU2RVrdHoAefKTKNzGde653JK/pYTflSV+6ini3/aZZnXlF6t001w3wswmakdwTr0hXx` +
 	`Ez/hHYio72Gpn7+T/L+nl6dKkjeGqd/Kor5x2TY9uYB737ESmAe5T8ZlPaGMFHh0mYlNTeRq` +
+	`4qIKqL6DwddBF4Ju2svn2MeNMGfE358H31mxAl2k4PPrwBTR1sFUCUOzAXVA/g9Ov5Y9ni2G` +
+	`rkTahBtV9yuUUd1D+oRTTTdP0bj3A+3xxXmKTBhRuvurydPTicKuWzeILIJkcwp7Kl5UbI2N` +
+	`n1ayZdaCIw/r4w==`
+
+// testSignatureBadBase64 is an invalid signature.
+const testSignatureBadBase64 = `iQEzBAABCAAdFiEEW/7sQxfnRgCGIZcGN6arO88s` +
 	`4qIKqL6DwddBF4Ju2svn2MeNMGfE358H31mxAl2k4PPrwBTR1sFUCUOzAXVA/g9Ov5Y9ni2G` +
 	`rkTahBtV9yuUUd1D+oRTTTdP0bj3A+3xxXmKTBhRuvurydPTicKuWzeILIJkcwp7Kl5UbI2N` +
 	`n1ayZdaCIw/r4w==`

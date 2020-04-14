@@ -236,7 +236,7 @@ func (s signatureAuthentication) AuthenticatePackage(meta PackageMeta, location 
 	// valid signature for any of the provided keys.
 	signingKey, err := s.findSigningKey()
 	if err != nil {
-		return nil, fmt.Errorf("error finding signing key: %s", err)
+		return nil, err
 	}
 
 	// Verify the signature using the HashiCorp public key. If this succeeds,
