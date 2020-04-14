@@ -232,17 +232,11 @@ func NewSignatureAuthentication(document, signature []byte, keys []SigningKey) P
 }
 
 func (s signatureAuthentication) AuthenticatePackage(meta PackageMeta, location PackageLocation) (*PackageAuthenticationResult, error) {
-	if _, ok := location.(PackageLocalArchive); !ok {
-		// A source should not use this authentication type for non-archive
-		// locations.
-		return nil, fmt.Errorf("cannot check archive hash for non-archive location %s", location)
-	}
-
 	// Find the key that signed the checksum file. This can fail if there is no
 	// valid signature for any of the provided keys.
 	signingKey, err := s.findSigningKey()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error finding signing key: %s", err)
 	}
 
 	// Verify the signature using the HashiCorp public key. If this succeeds,
@@ -266,12 +260,12 @@ func (s signatureAuthentication) AuthenticatePackage(meta PackageMeta, location 
 
 		authorKey, err := openpgpArmor.Decode(strings.NewReader(signingKey.ASCIIArmor))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error decoding signing key: %s", err)
 		}
 
 		trustSignature, err := openpgpArmor.Decode(strings.NewReader(signingKey.TrustSignature))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error decoding trust signature: %s", err)
 		}
 
 		_, err = openpgp.CheckDetachedSignature(hashicorpPartnersKeyring, authorKey.Body, trustSignature.Body)
@@ -300,7 +294,7 @@ func (s signatureAuthentication) findSigningKey() (*SigningKey, error) {
 	for _, key := range s.Keys {
 		keyring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(key.ASCIIArmor))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error decoding signing key: %s", err)
 		}
 
 		_, err = openpgp.CheckDetachedSignature(keyring, bytes.NewReader(s.Document), bytes.NewReader(s.Signature))
@@ -313,7 +307,7 @@ func (s signatureAuthentication) findSigningKey() (*SigningKey, error) {
 
 		// Any other signature error is terminal.
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error checking signature: %s", err)
 		}
 
 		return &key, nil
