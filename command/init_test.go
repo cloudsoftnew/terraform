@@ -930,6 +930,10 @@ func TestInit_providerSource(t *testing.T) {
 		t.Errorf("wrong version selections after upgrade\n%s", diff)
 	}
 
+	outputStr := ui.OutputWriter.String()
+	if want := "Installed hashicorp/test v1.2.3 (verified checksum)"; !strings.Contains(outputStr, want) {
+		t.Fatalf("unexpected output: %s\nexpected to include %q", outputStr, want)
+	}
 }
 
 func TestInit_getUpgradePlugins(t *testing.T) {
@@ -1086,7 +1090,7 @@ func TestInit_getProviderMissing(t *testing.T) {
 
 	args := []string{}
 	if code := c.Run(args); code == 0 {
-		t.Fatalf("expceted error, got output: \n%s", ui.OutputWriter.String())
+		t.Fatalf("expected error, got output: \n%s", ui.OutputWriter.String())
 	}
 
 	if !strings.Contains(ui.ErrorWriter.String(), "no available releases match") {
