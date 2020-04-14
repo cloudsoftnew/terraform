@@ -49,7 +49,7 @@ type mockAuthentication struct {
 	err    error
 }
 
-func (m mockAuthentication) AuthenticatePackage(meta PackageMeta, localLocation PackageLocation) (*PackageAuthenticationResult, error) {
+func (m mockAuthentication) AuthenticatePackage(localLocation PackageLocation) (*PackageAuthenticationResult, error) {
 	if m.err == nil {
 		return &PackageAuthenticationResult{result: m.result}, nil
 	} else {
@@ -65,7 +65,7 @@ func TestPackageAuthenticationAll_success(t *testing.T) {
 	result, err := PackageAuthenticationAll(
 		&mockAuthentication{result: verifiedChecksum},
 		&mockAuthentication{result: communityProvider},
-	).AuthenticatePackage(PackageMeta{}, nil)
+	).AuthenticatePackage(nil)
 
 	want := PackageAuthenticationResult{result: communityProvider}
 	if result == nil || *result != want {
@@ -84,7 +84,7 @@ func TestPackageAuthenticationAll_failure(t *testing.T) {
 		&mockAuthentication{result: verifiedChecksum},
 		&mockAuthentication{err: someError},
 		&mockAuthentication{result: communityProvider},
-	).AuthenticatePackage(PackageMeta{}, nil)
+	).AuthenticatePackage(nil)
 
 	if result != nil {
 		t.Errorf("wrong result: got %#v, want nil", result)
@@ -97,11 +97,6 @@ func TestPackageAuthenticationAll_failure(t *testing.T) {
 // Archive checksum authentication requires a file fixture and a known-good
 // SHA256 hash. The result should be "verified checksum".
 func TestArchiveChecksumAuthentication_success(t *testing.T) {
-	// PackageMeta is unused by this authentication mechanism
-	// FIXME: and really by all the others, so let's remove it from the call
-	// signature in a later commit
-	meta := PackageMeta{}
-
 	// Location must be a PackageLocalArchive path
 	location := PackageLocalArchive("testdata/filesystem-mirror/registry.terraform.io/hashicorp/null/terraform-provider-null_2.1.0_linux_amd64.zip")
 
@@ -114,7 +109,7 @@ func TestArchiveChecksumAuthentication_success(t *testing.T) {
 	}
 
 	auth := NewArchiveChecksumAuthentication(wantSHA256Sum)
-	result, err := auth.AuthenticatePackage(meta, location)
+	result, err := auth.AuthenticatePackage(location)
 
 	wantResult := PackageAuthenticationResult{result: verifiedChecksum}
 	if result == nil || *result != wantResult {
@@ -149,15 +144,10 @@ func TestArchiveChecksumAuthentication_failure(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			// PackageMeta is unused by this authentication mechanism
-			// FIXME: and really by all the others, so let's remove it from the call
-			// signature in a later commit
-			meta := PackageMeta{}
-
 			// Zero expected checksum, either because we'll error before we
 			// reach it, or we want to force a checksum mismatch
 			auth := NewArchiveChecksumAuthentication([sha256.Size]byte{0})
-			result, err := auth.AuthenticatePackage(meta, test.location)
+			result, err := auth.AuthenticatePackage(test.location)
 
 			if result != nil {
 				t.Errorf("wrong result: got %#v, want nil", result)
@@ -173,11 +163,6 @@ func TestArchiveChecksumAuthentication_failure(t *testing.T) {
 // filename, and an expected SHA256 hash. On success both return values should
 // be nil.
 func TestMatchingChecksumAuthentication_success(t *testing.T) {
-	// PackageMeta is unused by this authentication mechanism
-	// FIXME: and really by all the others, so let's remove it from the call
-	// signature in a later commit
-	meta := PackageMeta{}
-
 	// Location is unused
 	location := PackageLocalArchive("testdata/my-package.zip")
 
@@ -195,7 +180,7 @@ func TestMatchingChecksumAuthentication_success(t *testing.T) {
 	filename := "my-package.zip"
 
 	auth := NewMatchingChecksumAuthentication(document, filename, wantSHA256Sum)
-	result, err := auth.AuthenticatePackage(meta, location)
+	result, err := auth.AuthenticatePackage(location)
 
 	if result != nil {
 		t.Errorf("wrong result: got %#v, want nil", result)
@@ -249,16 +234,11 @@ func TestMatchingChecksumAuthentication_failure(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			// PackageMeta is unused by this authentication mechanism
-			// FIXME: and really by all the others, so let's remove it from the call
-			// signature in a later commit
-			meta := PackageMeta{}
-
 			// Location is unused
 			location := PackageLocalArchive("testdata/my-package.zip")
 
 			auth := NewMatchingChecksumAuthentication(test.document, filename, wantSHA256Sum)
-			result, err := auth.AuthenticatePackage(meta, location)
+			result, err := auth.AuthenticatePackage(location)
 
 			if result != nil {
 				t.Errorf("wrong result: got %#v, want nil", result)
@@ -330,11 +310,6 @@ func TestSignatureAuthentication_success(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			// PackageMeta is unused by this authentication mechanism
-			// FIXME: and really by all the others, so let's remove it from the call
-			// signature in a later commit
-			meta := PackageMeta{}
-
 			// Location is unused
 			location := PackageLocalArchive("testdata/my-package.zip")
 
@@ -344,7 +319,7 @@ func TestSignatureAuthentication_success(t *testing.T) {
 			}
 
 			auth := NewSignatureAuthentication([]byte(testShaSums), signature, test.keys)
-			result, err := auth.AuthenticatePackage(meta, location)
+			result, err := auth.AuthenticatePackage(location)
 
 			if result == nil || *result != test.result {
 				t.Errorf("wrong result: got %#v, want %#v", result, test.result)
@@ -415,11 +390,6 @@ func TestSignatureAuthentication_failure(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			// PackageMeta is unused by this authentication mechanism
-			// FIXME: and really by all the others, so let's remove it from the call
-			// signature in a later commit
-			meta := PackageMeta{}
-
 			// Location is unused
 			location := PackageLocalArchive("testdata/my-package.zip")
 
@@ -429,7 +399,7 @@ func TestSignatureAuthentication_failure(t *testing.T) {
 			}
 
 			auth := NewSignatureAuthentication([]byte(testShaSums), signature, test.keys)
-			result, err := auth.AuthenticatePackage(meta, location)
+			result, err := auth.AuthenticatePackage(location)
 
 			if result != nil {
 				t.Errorf("wrong result: got %#v, want nil", result)

@@ -64,15 +64,14 @@ type SigningKey struct {
 // that a package is what its distributor intended to distribute and that it
 // has not been tampered with.
 type PackageAuthentication interface {
-	// AuthenticatePackage takes the metadata about the package as returned
-	// by its original source, and also the "localLocation" where it has been
-	// staged for local inspection (which may or may not be the same as the
-	// original source location), and returns a PackageAuthenticationResult, or
-	// an error if the authentication checks fail.
+	// AuthenticatePackage takes the local location of a package (which may or
+	// may not be the same as the original source location), and returns a
+	// PackageAuthenticationResult, or an error if the authentication checks
+	// fail.
 	//
-	// The localLocation is guaranteed not to be a PackageHTTPURL: a
-	// remote package will always be staged locally for inspection first.
-	AuthenticatePackage(meta PackageMeta, localLocation PackageLocation) (*PackageAuthenticationResult, error)
+	// The local location is guaranteed not to be a PackageHTTPURL: a remote
+	// package will always be staged locally for inspection first.
+	AuthenticatePackage(localLocation PackageLocation) (*PackageAuthenticationResult, error)
 }
 
 type packageAuthenticationAll []PackageAuthentication
@@ -89,11 +88,11 @@ func PackageAuthenticationAll(checks ...PackageAuthentication) PackageAuthentica
 	return packageAuthenticationAll(checks)
 }
 
-func (checks packageAuthenticationAll) AuthenticatePackage(meta PackageMeta, localLocation PackageLocation) (*PackageAuthenticationResult, error) {
+func (checks packageAuthenticationAll) AuthenticatePackage(localLocation PackageLocation) (*PackageAuthenticationResult, error) {
 	var authResult *PackageAuthenticationResult
 	for _, check := range checks {
 		var err error
-		authResult, err = check.AuthenticatePackage(meta, localLocation)
+		authResult, err = check.AuthenticatePackage(localLocation)
 		if err != nil {
 			return authResult, err
 		}
@@ -118,7 +117,7 @@ func NewArchiveChecksumAuthentication(wantSHA256Sum [sha256.Size]byte) PackageAu
 	return archiveHashAuthentication{wantSHA256Sum}
 }
 
-func (a archiveHashAuthentication) AuthenticatePackage(meta PackageMeta, localLocation PackageLocation) (*PackageAuthenticationResult, error) {
+func (a archiveHashAuthentication) AuthenticatePackage(localLocation PackageLocation) (*PackageAuthenticationResult, error) {
 	archiveLocation, ok := localLocation.(PackageLocalArchive)
 	if !ok {
 		// A source should not use this authentication type for non-archive
@@ -169,7 +168,7 @@ func NewMatchingChecksumAuthentication(document []byte, filename string, wantSHA
 	}
 }
 
-func (m matchingChecksumAuthentication) AuthenticatePackage(meta PackageMeta, location PackageLocation) (*PackageAuthenticationResult, error) {
+func (m matchingChecksumAuthentication) AuthenticatePackage(location PackageLocation) (*PackageAuthenticationResult, error) {
 	// Find the checksum in the list with matching filename. The document is
 	// in the form "0123456789abcdef filename.zip".
 	filename := []byte(m.Filename)
@@ -231,7 +230,7 @@ func NewSignatureAuthentication(document, signature []byte, keys []SigningKey) P
 	}
 }
 
-func (s signatureAuthentication) AuthenticatePackage(meta PackageMeta, location PackageLocation) (*PackageAuthenticationResult, error) {
+func (s signatureAuthentication) AuthenticatePackage(location PackageLocation) (*PackageAuthenticationResult, error) {
 	// Find the key that signed the checksum file. This can fail if there is no
 	// valid signature for any of the provided keys.
 	signingKey, err := s.findSigningKey()

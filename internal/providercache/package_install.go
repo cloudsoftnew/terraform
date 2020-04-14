@@ -69,7 +69,7 @@ func installFromHTTPURL(ctx context.Context, meta getproviders.PackageMeta, targ
 
 	var authResult *getproviders.PackageAuthenticationResult
 	if meta.Authentication != nil {
-		if authResult, err = meta.Authentication.AuthenticatePackage(meta, localLocation); err != nil {
+		if authResult, err = meta.Authentication.AuthenticatePackage(localLocation); err != nil {
 			return authResult, err
 		}
 	}
@@ -96,7 +96,7 @@ func installFromLocalArchive(ctx context.Context, meta getproviders.PackageMeta,
 	var authResult *getproviders.PackageAuthenticationResult
 	if meta.Authentication != nil {
 		var err error
-		if authResult, err = meta.Authentication.AuthenticatePackage(meta, meta.Location); err != nil {
+		if authResult, err = meta.Authentication.AuthenticatePackage(meta.Location); err != nil {
 			return nil, err
 		}
 	}
