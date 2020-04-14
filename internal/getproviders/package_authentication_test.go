@@ -5,7 +5,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
+
+	"golang.org/x/crypto/openpgp"
 )
 
 func TestPackageAuthenticationResult(t *testing.T) {
@@ -513,3 +516,57 @@ const testHashicorpSignatureGoodBase64 = `iQFLBAABCAA1FiEEkabn+F0FxlYwvvGJUYUth`
 	`YrTdDH35vwVyLXImWiZLnrXcT/fXLpQGx/N8PDy6WmCeju5Y5RD7TuntB71eCaCZi7wFe1tR` +
 	`qSoe9tD9A7ONB0rGuCY7BxqUj0S81hhz960YbNR9Q81WoNvF7b5SmcLJ1qJx1yvBLyqya6Su` +
 	`DKjU/YYCh7bwHIYzpk1/nK/7SaTHpisekqojVsfDth4TA+jGA==`
+
+// entityString function is used for logging the signing key.
+func TestEntityString(t *testing.T) {
+	var tests = []struct {
+		name     string
+		entity   *openpgp.Entity
+		expected string
+	}{
+		{
+			"nil",
+			nil,
+			"",
+		},
+		{
+			"testAuthorKeyArmor",
+			testReadArmoredEntity(t, testAuthorKeyArmor),
+			"37A6AB3BCF2C170A Terraform Testing (plugin/discovery/) <terraform+testing@hashicorp.com>",
+		},
+		{
+			"HashicorpPublicKey",
+			testReadArmoredEntity(t, HashicorpPublicKey),
+			"51852D87348FFC4C HashiCorp Security <security@hashicorp.com>",
+		},
+		{
+			"HashicorpPartnersKey",
+			testReadArmoredEntity(t, HashicorpPartnersKey),
+			"7D72D4268E4660FC HashiCorp Security (Terraform Partner Signing) <security+terraform@hashicorp.com>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := entityString(tt.entity)
+			if actual != tt.expected {
+				t.Errorf("expected %s, actual %s", tt.expected, actual)
+			}
+		})
+	}
+}
+
+func testReadArmoredEntity(t *testing.T, armor string) *openpgp.Entity {
+	data := strings.NewReader(armor)
+
+	el, err := openpgp.ReadArmoredKeyRing(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if count := len(el); count != 1 {
+		t.Fatalf("expected 1 entity, got %d", count)
+	}
+
+	return el[0]
+}

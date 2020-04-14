@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 
@@ -22,6 +23,8 @@ const (
 	partnerProvider
 	communityProvider
 )
+
+const communityProviderWarning = `community providers are not trusted by HashiCorp. Use at your own risk.`
 
 // PackageAuthenticationResult is returned from a PackageAuthentication
 // implementation. It is a mostly-opaque type intended for use in UI, which
@@ -296,7 +299,7 @@ func (s signatureAuthentication) findSigningKey() (*SigningKey, error) {
 			return nil, fmt.Errorf("error decoding signing key: %s", err)
 		}
 
-		_, err = openpgp.CheckDetachedSignature(keyring, bytes.NewReader(s.Document), bytes.NewReader(s.Signature))
+		entity, err := openpgp.CheckDetachedSignature(keyring, bytes.NewReader(s.Document), bytes.NewReader(s.Signature))
 
 		// If the signature issuer does not match the the key, keep trying the
 		// rest of the provided keys.
@@ -309,6 +312,7 @@ func (s signatureAuthentication) findSigningKey() (*SigningKey, error) {
 			return nil, fmt.Errorf("error checking signature: %s", err)
 		}
 
+		log.Printf("[DEBUG] Provider signed by %s", entityString(entity))
 		return &key, nil
 	}
 
@@ -317,4 +321,22 @@ func (s signatureAuthentication) findSigningKey() (*SigningKey, error) {
 	return nil, fmt.Errorf("authentication signature from unknown issuer")
 }
 
-const communityProviderWarning = `community providers are not trusted by HashiCorp. Use at your own risk.`
+// entityString extracts the key ID and identity name(s) from an openpgp.Entity
+// for logging.
+func entityString(entity *openpgp.Entity) string {
+	if entity == nil {
+		return ""
+	}
+
+	keyID := "n/a"
+	if entity.PrimaryKey != nil {
+		keyID = entity.PrimaryKey.KeyIdString()
+	}
+
+	var names []string
+	for _, identity := range entity.Identities {
+		names = append(names, identity.Name)
+	}
+
+	return fmt.Sprintf("%s %s", keyID, strings.Join(names, ", "))
+}
